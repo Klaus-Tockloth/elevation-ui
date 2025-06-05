@@ -40,6 +40,7 @@ Konfiguration:
 
 Versionen:
 - v1.0.0 - 2025-05-25: initiale Veröffentlichung
+- v1.0.1 - 2025-06-05: Richtungspfeil, Aktionen: Voreinstellung und Speicherung
 
 Autor:
 - Franz Kolberg
@@ -71,9 +72,9 @@ Links:
 // API endpoint URL
 const elevation_url = "https://api.hoehendaten.de:14444/v1/point";
 
-const localStorageTimer = 5; // save to localStorage all x seconds
-
 const simulateApiCall = false;
+
+const localStorageTimer = 5; // save to localStorage all x seconds
 
 const usePopups = true;
 
@@ -93,9 +94,31 @@ const ElevationIcon = L.Icon.extend({
 let arrayOfMarkerPairs = []; // array containing markers and their data
 let tmp_buffer = []; // 2 point buffer
 
-let mode = 0;
+let suppressNextMapClick = false;
 
-let eraseMode = false;
+const all_toggle_buttons = [];
+
+/*
+mode – Interaktionsmodus
+
+Diese Variable steuert, was beim Klicken auf die Karte passiert:
+
+    mode === 0: Kein aktiver Modus – Klicks werden ignoriert.
+
+    mode === 1: Ein-Punkt-Modus – Marker wird gesetzt.
+
+    mode === 2: Zwei-Punkt-Modus – Erst ein Marker, dann ein zweiter, 
+                                    dazwischen wird eine Linie gezeichnet.
+
+    mode === 9: Löschmodus 
+*/
+
+const MODE_NONE = 0;
+const MODE_POINT = 1;
+const MODE_LINE = 2;
+const MODE_ERASE = 9;
+
+let mode = MODE_POINT;
 
 let isFetchingElevation = false;
 
@@ -127,76 +150,143 @@ addCustomControls erstellt und fügt benutzerdefinierte Leaflet-Steuerelemente f
 Es definiert Schaltflächen zum Löschen, Entfernen, Hinzufügen einzelner Marker und Hinzufügen von Zwei-Punkt-Linien.
 Diese Funktion richtet die Hauptwerkzeugleiste der Benutzeroberfläche für die Interaktion mit den Höhenfunktionen ein.
 */
+
 function addCustomControls() {
-    // MAIN TOOLBAR CONTROL
-    const MainControl = L.Control.extend({
-        onAdd: () => {
-            const container = L.DomUtil.create("div", "leaflet-control leaflet-bar elevation-bar");
-            const btns = [];
+  mode = parseInt(localStorage.getItem("mode"));
+  if (!mode) mode = MODE_POINT;
 
-            function makeBtn(html, title, toggle, onClick, cl = "") {
-                const a = L.DomUtil.create("a", "elevation-btn " + cl, container);
-                a.innerHTML = html;
-                a.title = title;
-                L.DomEvent.disableClickPropagation(a);
-                a.addEventListener("click", (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (toggle) a.classList.toggle("pressed");
-                    btns.forEach((b) => {
-                        if (toggle && b !== a) b.classList.remove("pressed");
-                    });
-                    onClick(a);
-                });
-                btns.push(a);
-                return a;
+  const MainControl = L.Control.extend({
+    onAdd: () => {
+      const container = L.DomUtil.create("div", "leaflet-control leaflet-bar elevation-bar");
+      const btns = [];
+      let pointBtn = null;
+      let lineBtn = null;
+
+      function makeBtn(html, title, toggle, onClick, onUnpress = null, cl = "") {
+        const a = L.DomUtil.create("a", "elevation-btn " + cl, container);
+        a.innerHTML = html;
+        a.title = title;
+        L.DomEvent.disableClickPropagation(a);
+
+        const btnEntry = { element: a, onUnpress };
+
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const wasPressed = a.classList.contains("pressed");
+
+          if (toggle) {
+            if (wasPressed) {
+              a.classList.remove("pressed");
+              if (onUnpress) onUnpress(a);
+            } else {
+              btns.forEach((btn) => {
+                if (btn.element !== a && btn.element.classList.contains("pressed")) {
+                  btn.element.classList.remove("pressed");
+                  if (btn.onUnpress) btn.onUnpress(btn.element);
+                }
+              });
+              all_toggle_buttons.forEach((btn) => {
+                if (
+                  btn.element !== a &&
+                  btn.element.classList.contains("pressed")
+                ) {
+                  btn.element.classList.remove("pressed");
+                  if (btn.onUnpress) btn.onUnpress(btn.element);
+                }
+              });
+
+              a.classList.add("pressed");
+              onClick(a);
             }
+          } else {
+            onClick(a);
+          }
+        });
 
-            makeBtn("🗑️", txt_ClearEverything, false, () => {
-                clearAll();
-                mode = 0;
-                eraseMode = false;
-                map.getContainer().style.cursor = "";
-                btns.forEach((b) => b.classList.remove("pressed"));
-            }, 'elevation-btn-clear');
+        btns.push(btnEntry);
+        all_toggle_buttons.push(btnEntry);
+        return a;
+      }
 
-            makeBtn("⌫", txt_EraseMarkerAndLine, true, () => {
-                eraseMode = !eraseMode;
-                mode = eraseMode ? 9 : 0;
-                map.getContainer().style.cursor = "";
-            }, 'elevation-btn-erase');
+      // Clear Button
+      makeBtn("🗑️", txt_ClearEverything, false, () => {
+        clearAll();
+        mode = MODE_NONE;
+        map.getContainer().style.cursor = "";
+        btns.forEach((b) => b.element.classList.remove("pressed"));
+        localStorage.setItem("mode", MODE_NONE);
+      }, null, 'elevation-btn-clear');
 
-            makeBtn("⨁", txt_AddMarkers, true, () => {
-                if (mode === 1) {
-                    mode = 0;
-                    map.getContainer().style.cursor = "";
-                } else {
-                    mode = 1;
-                    eraseMode = false;
-                    map.getContainer().style.cursor = "crosshair";
-                }
-            }, 'elevation-btn-1point');
-
-            makeBtn("⨁-⨁", txt_Add2PointsAndLine, true, () => {
-                if (mode === 2) {
-                    mode = 0;
-                    map.getContainer().style.cursor = "";
-                } else {
-                    mode = 2;
-                    eraseMode = false;
-                    map.getContainer().style.cursor = "crosshair";
-                }
-            }, 'elevation-btn-2points');
-
-
-            return container;
+      // Erase Button
+      makeBtn(
+        "⌫",
+        txt_EraseMarkerAndLine,
+        true,
+        () => {
+          mode = MODE_ERASE;
+          localStorage.setItem("mode", MODE_ERASE);
         },
-    });
+        () => {
+          mode = MODE_NONE;
+          localStorage.setItem("mode", MODE_NONE);
+        },
+        'elevation-btn-erase'
+      );
 
-    new MainControl({
-        position: "topleft"
-    }).addTo(map);
+      // Point Button
+      pointBtn = makeBtn(
+        "⨁",
+        txt_AddMarkers,
+        true,
+        () => {
+          mode = MODE_POINT;
+          map.getContainer().style.cursor = "crosshair";
+          localStorage.setItem("mode", MODE_POINT);
+        },
+        () => {
+          mode = MODE_NONE;
+          map.getContainer().style.cursor = "";
+          localStorage.setItem("mode", MODE_NONE);
+        },
+        'elevation-btn-1point'
+      );
+
+      // Line Button
+      lineBtn = makeBtn(
+        "⨁-⨁",
+        txt_Add2PointsAndLine,
+        true,
+        () => {
+          mode = MODE_LINE;
+          map.getContainer().style.cursor = "crosshair";
+          localStorage.setItem("mode", MODE_LINE);
+        },
+        () => {
+          mode = MODE_NONE;
+          map.getContainer().style.cursor = "";
+          localStorage.setItem("mode", MODE_NONE);
+        },
+        'elevation-btn-2points'
+      );
+
+      // Set initial button state from localStorage
+      if (mode === MODE_POINT && pointBtn) {
+        pointBtn.classList.add("pressed");
+        map.getContainer().style.cursor = "crosshair";
+      } else if (mode === MODE_LINE && lineBtn) {
+        lineBtn.classList.add("pressed");
+        map.getContainer().style.cursor = "crosshair";
+      }
+
+      return container;
+    },
+  });
+
+  new MainControl({ position: "topleft" }).addTo(map);
 }
+
 
 /*
 initClickHandling richtet den primären Klick-Ereignis-Listener auf der Leaflet-Karte ein. Basierend auf dem aktuellen
@@ -205,8 +295,17 @@ Es ignoriert Klicks, wenn eine Höhenabfrage läuft oder wenn der Klick auf vorh
 */
 function initClickHandling() {
     map.on("click", (e) => {
+
+        if (suppressNextMapClick) return; // Skip this click if suppressed
+
+        if (mode === MODE_NONE)
+            return;
+
+        console.log("elevation.js initClickHandling click");        
+
         // Prevent click during elevation fetch
         if (isFetchingElevation) return;
+
         // ignore if clicking on a marker or tooltip
         if (
             e.originalEvent?.target?.closest(
@@ -216,9 +315,9 @@ function initClickHandling() {
             return;
         }
 
-        if (mode === 0) return;
-        if (mode === 1) addMarker(e.latlng, 1);
-        if (mode === 2) addMarkerAndLine(e.latlng);
+        if (mode === MODE_NONE) return;
+        if (mode === MODE_POINT) addMarker(e.latlng, 1);
+        if (mode === MODE_LINE) addMarkerAndLine(e.latlng);
     });
 }
 
@@ -230,7 +329,7 @@ Dieser Inhalt wird typischerweise für Popups oder ein Overlay-Panel verwendet.
 function generateMarkerInfoContent(m) {
     if (!m.isError) {
         return `
-      Höhe: ${(Math.round(m.elevation * 100) / 100).toFixed(2)} m<br>
+      Höhe: ${formatNumber(m.elevation)} m<br>
       Vom: ${m.actuality || "?"}<br>
       Lon: ${typeof m.latlng?.lng === "number" ? m.latlng.lng.toFixed(7) : "?"}<br>
       Lat: ${typeof m.latlng?.lat === "number" ? m.latlng.lat.toFixed(7) : "?"}<br>
@@ -264,7 +363,7 @@ function generateLineInfoContent(pair) {
     const latlng2 = L.latLng(pair.m2.latlng.lat, pair.m2.latlng.lng);
     const dist = latlng1.distanceTo(latlng2);
 
-    const diff = (Math.round((pair.m2.elevation - pair.m1.elevation) * 100) / 100).toFixed(2);
+    const diff = formatNumber(pair.m2.elevation - pair.m1.elevation);
 
     const grad =
         Math.sign(diff) *
@@ -280,7 +379,7 @@ function generateLineInfoContent(pair) {
     const getPointInfo = (m) => {
         if (!m.isError) {
             return `
-        Höhe: ${(Math.round(m.elevation * 100) / 100).toFixed(2)}<br>
+        Höhe: ${formatNumber(m.elevation)} m<br>
         Vom: ${m.actuality || "?"}<br>
         Lon: ${typeof m.latlng?.lng === "number" ? m.latlng.lng.toFixed(7) : "?"}<br>
         Lat: ${typeof m.latlng?.lat === "number" ? m.latlng.lat.toFixed(7) : "?"}
@@ -309,30 +408,31 @@ function generateLineInfoContent(pair) {
     if (withGrad) {
         lineInfo = (!pair.m1.isError && !pair.m2.isError) ?
             `
-        Delta: ${Math.abs(diff)} m<br>
-        Winkel: ${Math.abs((Math.round(angleDeg * 100) / 100).toFixed(2))}°<br>
-        Strecke: ${(Math.round(dist * 100) / 100).toFixed(2)} m<br>
-        Prozent: ${grad}% ${arrow}
-      ` :
+            Delta: ${Math.abs(formatNumber(diff))} m<br>
+            Winkel: ${Math.abs(formatNumber(angleDeg))}°<br>
+            Strecke: ${formatNumber(dist)} m<br>
+            Prozent: ${grad}% ${arrow}
+        ` :
             `
-        Delta: -<br>
-        Winkel: -<br>
-        Strecke: ${(Math.round(dist * 100) / 100).toFixed(2)} m<br>
-        Prozent: -
-      `;
-    } else {
-        lineInfo = (!pair.m1.isError && !pair.m2.isError) ?
-            `
-        Delta: ${Math.abs(diff)} m<br>
-        Winkel: ${Math.abs((Math.round(angleDeg * 100) / 100).toFixed(2))}°<br>
-        Strecke: ${(Math.round(dist * 100) / 100).toFixed(2)} m<br>
-      ` :
-            `
-        Delta: -<br>
-        Winkel: -<br>
-        Strecke: ${(Math.round(dist * 100) / 100).toFixed(2)} m<br>
-      `;
-    }
+            Delta: -<br>
+            Winkel: -<br>
+            Strecke: ${formatNumber(dist)} m<br>
+            Prozent: -
+        `;
+        } else {
+            lineInfo = (!pair.m1.isError && !pair.m2.isError) ?
+                `
+                Delta: ${Math.abs(formatNumber(diff))} m<br>
+                Winkel: ${Math.abs(formatNumber(angleDeg))}°<br>
+                Strecke: ${formatNumber(dist)} m<br>
+            ` :
+                `
+                Delta: -<br>
+                Winkel: -<br>
+                Strecke: ${formatNumber(dist)} m<br>
+            `;
+        }
+
 
     const detailed = false;
     if (detailed) {
@@ -484,7 +584,7 @@ function addTooltipAndPopupToMarker(marker, m) {
 
         /* 3 ) default case – just echo the value plus unit */
     } else {
-        tooltip = `${(Math.round(m.elevation * 100) / 100).toFixed(2)} m`;
+        tooltip = `${formatNumber(m.elevation)} m`;
     }
 
     marker.bindTooltip(tooltip, {
@@ -598,7 +698,7 @@ function addEventhandlingToLineTooltip(pair) {
             (p) => p.lineTooltip === pair.lineTooltip
         );
 
-        if (eraseMode) {
+        if (mode === MODE_ERASE) {
             if (index !== -1) {
                 removePair(pair);
                 arrayOfMarkerPairs.splice(index, 1);
@@ -606,7 +706,7 @@ function addEventhandlingToLineTooltip(pair) {
                 console.error("Tooltip not found in pair list");
             }
         } else {
-            console.warn("Not in erase mode");
+            console.warn("Not in MODE_ERASE");
         }
     });
 
@@ -664,7 +764,7 @@ um die Informationen des Markers und jede zugehörige Linie zu aktualisieren.
 function addEventhandlingToMarker(marker, pair) {
     // marker.on("click", () => {
     marker.on("click", function(e) {
-        if (mode === 9)
+        if (mode === MODE_ERASE)
             erase(marker);
         return;
     });
@@ -685,29 +785,159 @@ function addEventhandlingToMarker(marker, pair) {
 addLineAndTooltip zeichnet oder aktualisiert eine Polylinie und deren zugehörigen Tooltip zwischen zwei Markern eines Paares.
 Es entfernt jede vorhandene Linie und jeden Tooltip für das Paar, bevor neue erstellt werden. Die Linie wird gestaltet, und
 ihr Tooltip zeigt wichtige Informationen wie den Höhenunterschied an.
+Richtungspfeil zur Senke
 */
 function addLineAndTooltip(pair) {
     const latlng1 = pair.marker1.getLatLng();
     const latlng2 = pair.marker2.getLatLng();
 
-    // Remove old line and tooltip from map
+    // Remove old line, tooltip, and decorator
     if (pair.line) map.removeLayer(pair.line);
     if (pair.lineTooltip) map.removeLayer(pair.lineTooltip);
+    if (pair.arrowDecorator) map.removeLayer(pair.arrowDecorator);
 
-    // Create new line
+    // Create the line
     const newLine = L.polyline([latlng1, latlng2], {
         color: "red",
         weight: 2,
     }).addTo(map);
 
-    // Add a custom class
     newLine._path.classList.add('my-custom-line');
-
     newLine._path.removeAttribute("stroke");
 
     pair.line = newLine;
 
+    // Elevation values
+    const elev1 = pair.m1.elevation;
+    const elev2 = pair.m2.elevation;
+
+    let arrowFrom, arrowTo;
+
+    if (elev1 > elev2) {
+        arrowFrom = latlng1;
+        arrowTo = latlng2;
+    } else if (elev2 > elev1) {
+        arrowFrom = latlng2;
+        arrowTo = latlng1;
+    } else {
+        arrowFrom = null;
+    }
+    
+    if (arrowFrom && arrowTo) {
+      const observeZoomLevel = true;
+      if (!observeZoomLevel) {
+        const arrowLine = L.polyline([arrowFrom, arrowTo]);
+
+        const arrowDecorator = L.polylineDecorator(arrowLine, {
+          patterns: [
+            {
+              offset: "10%",
+              repeat: 0,
+              symbol: L.Symbol.arrowHead({
+                pixelSize: 10,
+                polygon: false,
+                pathOptions: { stroke: true, color: "rgb(82, 144, 199)" },
+              }),
+            },
+            {
+              offset: "95%",
+              repeat: 0,
+              symbol: L.Symbol.arrowHead({
+                pixelSize: 10,
+                polygon: false,
+                pathOptions: { stroke: true, color: "rgb(82, 144, 199)" },
+              }),
+            },
+          ],
+        }).addTo(map);
+        pair.arrowDecorator = arrowDecorator;
+      } else {
+        if (arrowFrom && arrowTo) {
+            const arrowLine = L.polyline([arrowFrom, arrowTo]);
+            pair.arrowDecorator = createLineWithArrowDecorator(pair, arrowFrom, arrowTo);
+        }
+      }
+    }
+
     createLineTooltip(pair);
+}
+
+/*
+Unfortunately, Leaflet.PolylineDecorator only supports percentage-based offsets, not pixel-based. 
+Damit die Richtungspfeile stets in etwa den gleichen Abstand zu den Enpunkten haben,
+muss zoom level berücksichtigt werden
+*/ 
+function createLineWithArrowDecorator(pair, arrowFrom, arrowTo) {
+  const arrowLine = pair.line; // use the real line
+
+  const getOffsetPercentageValue = (from, to, pixelGap) => {
+    const p1 = map.latLngToContainerPoint(from);
+    const p2 = map.latLngToContainerPoint(to);
+    const pixelLength = p1.distanceTo(p2);
+    const percent = (pixelGap / pixelLength) * 100;
+    return Math.min(Math.max(percent, 1), 49); // return as number
+  };
+
+  const pixelGapStart = 24;
+  const pixelGapEnd = 18;
+
+  const percentStart = getOffsetPercentageValue(
+    arrowFrom,
+    arrowTo,
+    pixelGapStart
+  );
+  const percentEnd = getOffsetPercentageValue(arrowTo, arrowFrom, pixelGapEnd);
+
+  const offsetStart = `${percentStart}%`;
+  const offsetEnd = `${100 - percentEnd}%`;
+
+  const buildDecorator = () =>
+    L.polylineDecorator(arrowLine, {
+      patterns: [
+        {
+          offset: offsetStart,
+          repeat: 0,
+          symbol: L.Symbol.arrowHead({
+            pixelSize: 10,
+            polygon: false,
+            pathOptions: { stroke: true, color: "rgb(82, 144, 199)" },
+          }),
+        },
+        {
+          offset: offsetEnd,
+          repeat: 0,
+          symbol: L.Symbol.arrowHead({
+            pixelSize: 10,
+            polygon: false,
+            pathOptions: { stroke: true, color: "rgb(82, 144, 199)" },
+          }),
+        },
+      ],
+    });
+
+  if (pair.arrowDecorator) {
+    map.removeLayer(pair.arrowDecorator);
+    pair.arrowDecorator = null;
+  }
+
+  if (pair.zoomHandler) {
+    map.off("zoomend", pair.zoomHandler);
+    pair.zoomHandler = null;
+  }
+
+  pair.arrowDecorator = buildDecorator().addTo(map);
+
+  pair.zoomHandler = () => {
+    if (pair.arrowDecorator) map.removeLayer(pair.arrowDecorator);
+    pair.arrowDecorator = createLineWithArrowDecorator(
+      pair,
+      arrowFrom,
+      arrowTo
+    );
+  };
+  map.on("zoomend", pair.zoomHandler);
+
+  return pair.arrowDecorator;
 }
 
 /*
@@ -758,7 +988,7 @@ function fetchElevation(latlng, onSuccess) {
         })
         .then((res) => {
             isFetchingElevation = false;
-            console.log("Full elevation response:", res);
+            //console.log("Full elevation response:", res);
 
             const {
                 IsError: isError,
@@ -808,9 +1038,10 @@ function createLineTooltip(pair) {
     const latlng2 = pair.marker2.getLatLng();
 
     const dist = latlng1.distanceTo(latlng2);
-    const diff = (
-            Math.round((parseFloat(pair.m2.elevation) - parseFloat(pair.m1.elevation)) * 100) / 100)
-        .toFixed(2);
+    const diff = formatNumber(
+            parseFloat(pair.m2.elevation) - parseFloat(pair.m1.elevation)
+            );
+
     const grad =
         Math.sign(diff) *
         Math.max(1, Math.round(Math.abs((diff / dist) * 100)));
@@ -891,7 +1122,7 @@ function createLineTooltip(pair) {
     });
 
     // 4. Klick auf Tooltip öffnet Popup des Ghost‑Markers
-    if (!eraseMode)
+    if (mode !== MODE_ERASE)
         tooltip.on("click", () => ghost.openPopup());
 
     // 5. Referenzen speichern
@@ -910,6 +1141,9 @@ function clearAll() {
         if (pair.marker2) map.removeLayer(pair.marker2);
         if (pair.line) map.removeLayer(pair.line);
         if (pair.lineTooltip) map.removeLayer(pair.lineTooltip);
+
+        if (pair.arrowDecorator) map.removeLayer(pair.arrowDecorator);
+
     });
     // Clear the array properly
     arrayOfMarkerPairs.length = 0;
@@ -924,29 +1158,17 @@ Wenn der Marker Teil einer Zwei-Punkt-Linie ist, werden auch die entsprechende L
 Marker des Paares entfernt. Es aktualisiert das `arrayOfMarkerPairs`, um die Löschung widerzuspiegeln.
 */
 function erase(clickedMarker) {
-    const index = arrayOfMarkerPairs.findIndex(
-        (pair) => pair.marker1 === clickedMarker || pair.marker2 === clickedMarker
-    );
-    if (index !== -1) {
+  const index = arrayOfMarkerPairs.findIndex(
+    (pair) => pair.marker1 === clickedMarker || pair.marker2 === clickedMarker
+  );
 
-        const {
-            marker1,
-            marker2,
-            line,
-            lineTooltip
-        } = arrayOfMarkerPairs[index];
+  if (index !== -1) {
+    const pair = arrayOfMarkerPairs[index];
 
-        map.removeLayer(marker1);
-        if (marker2 != null) {
-            map.removeLayer(marker2);
+    removePair(pair); // Use the helper function
 
-            map.removeLayer(line);
-            map.removeLayer(lineTooltip);
-        }
-
-        // Remove from arrayOfMarkerPairs array
-        arrayOfMarkerPairs.splice(index, 1);
-    }
+    arrayOfMarkerPairs.splice(index, 1); // Remove from array
+  }
 }
 
 /*
@@ -959,7 +1181,8 @@ function removePair(pair) {
         marker1,
         marker2,
         line,
-        lineTooltip
+        lineTooltip,
+        arrowDecorator
     } = pair;
 
     map.removeLayer(marker1);
@@ -968,6 +1191,8 @@ function removePair(pair) {
 
         map.removeLayer(line);
         map.removeLayer(lineTooltip);
+
+        map.removeLayer(arrowDecorator);
     }
 }
 
@@ -1090,6 +1315,13 @@ function showOverlayWithContent(content) {
     } else {
         console.error("Could not find #map-overlay-header");
     }
+}
+
+/*
+auf 2 Nachkommestellen runden
+*/
+function formatNumber(number) {
+  return (Math.round(number * 100) / 100).toFixed(2);
 }
 
 /*
