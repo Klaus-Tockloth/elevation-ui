@@ -153,7 +153,10 @@ Diese Funktion richtet die Hauptwerkzeugleiste der Benutzeroberfläche für die 
 
 function addCustomControls() {
   mode = parseInt(localStorage.getItem("mode"));
-  if (!mode) mode = MODE_POINT;
+  if (!mode) 
+    mode = MODE_POINT;
+  if (mode !== MODE_POINT && mode !== MODE_LINE)
+     mode = MODE_POINT;
 
   const MainControl = L.Control.extend({
     onAdd: () => {
