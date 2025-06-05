@@ -791,78 +791,46 @@ ihr Tooltip zeigt wichtige Informationen wie den Höhenunterschied an.
 Richtungspfeil zur Senke
 */
 function addLineAndTooltip(pair) {
-    const latlng1 = pair.marker1.getLatLng();
-    const latlng2 = pair.marker2.getLatLng();
+    let latlng1 = null;
+    let latlng2 = null;
 
-    // Remove old line, tooltip, and decorator
+    //pair.m1.elevation = pair.m2.elevation;
+
+    if (pair.m1.elevation > pair.m2.elevation) {
+      latlng1 = pair.marker1.getLatLng();
+      latlng2 = pair.marker2.getLatLng();
+    } else if (pair.m1.elevation < pair.m2.elevation) {
+      latlng2 = pair.marker1.getLatLng();
+      latlng1 = pair.marker2.getLatLng();
+    } else {
+      latlng2 = pair.marker1.getLatLng();
+      latlng1 = pair.marker2.getLatLng();
+    }
+
     if (pair.line) map.removeLayer(pair.line);
     if (pair.lineTooltip) map.removeLayer(pair.lineTooltip);
     if (pair.arrowDecorator) map.removeLayer(pair.arrowDecorator);
+    if (pair.zoomHandler) map.off("zoomend", pair.zoomHandler);
 
-    // Create the line
-    const newLine = L.polyline([latlng1, latlng2], {
-        color: "red",
-        weight: 2,
-    }).addTo(map);
+  /*    
+    L.polyline([latlng1, latlng2], ...)
+    Then latlng1 → latlng2 defines the direction of the line.
+    So any arrowHead placed along that line will point from latlng1 to latlng2, 
+    regardless of elevation!
+  */
+  const newLine = L.polyline([latlng1, latlng2], {
+    color: "red",
+    weight: 2,
+  }).addTo(map);
 
-    newLine._path.classList.add('my-custom-line');
-    newLine._path.removeAttribute("stroke");
+  newLine._path.classList.add("my-custom-line");
+  newLine._path.removeAttribute("stroke");
 
-    pair.line = newLine;
+  pair.line = newLine;
 
-    // Elevation values
-    const elev1 = pair.m1.elevation;
-    const elev2 = pair.m2.elevation;
+  pair.arrowDecorator = createLineWithArrowDecorator(pair);
 
-    let arrowFrom, arrowTo;
-
-    if (elev1 > elev2) {
-        arrowFrom = latlng1;
-        arrowTo = latlng2;
-    } else if (elev2 > elev1) {
-        arrowFrom = latlng2;
-        arrowTo = latlng1;
-    } else {
-        arrowFrom = null;
-    }
-    
-    if (arrowFrom && arrowTo) {
-      const observeZoomLevel = true;
-      if (!observeZoomLevel) {
-        const arrowLine = L.polyline([arrowFrom, arrowTo]);
-
-        const arrowDecorator = L.polylineDecorator(arrowLine, {
-          patterns: [
-            {
-              offset: "10%",
-              repeat: 0,
-              symbol: L.Symbol.arrowHead({
-                pixelSize: 10,
-                polygon: false,
-                pathOptions: { stroke: true, color: "rgb(82, 144, 199)" },
-              }),
-            },
-            {
-              offset: "95%",
-              repeat: 0,
-              symbol: L.Symbol.arrowHead({
-                pixelSize: 10,
-                polygon: false,
-                pathOptions: { stroke: true, color: "rgb(82, 144, 199)" },
-              }),
-            },
-          ],
-        }).addTo(map);
-        pair.arrowDecorator = arrowDecorator;
-      } else {
-        if (arrowFrom && arrowTo) {
-            const arrowLine = L.polyline([arrowFrom, arrowTo]);
-            pair.arrowDecorator = createLineWithArrowDecorator(pair, arrowFrom, arrowTo);
-        }
-      }
-    }
-
-    createLineTooltip(pair);
+  createLineTooltip(pair);
 }
 
 /*
@@ -870,15 +838,36 @@ Unfortunately, Leaflet.PolylineDecorator only supports percentage-based offsets,
 Damit die Richtungspfeile stets in etwa den gleichen Abstand zu den Enpunkten haben,
 muss zoom level berücksichtigt werden
 */ 
-function createLineWithArrowDecorator(pair, arrowFrom, arrowTo) {
-  const arrowLine = pair.line; // use the real line
+function createLineWithArrowDecorator(pair) {
+  const latlng1 = pair.marker1.getLatLng();
+  const latlng2 = pair.marker2.getLatLng();
+
+  const elev1 = pair.m1.elevation;
+  const elev2 = pair.m2.elevation;
+
+  if (elev1 === elev2)
+    return;
+
+  let arrowFrom = null;
+  let arrowTo = null;
+
+  if (elev1 > elev2) {
+    arrowFrom = latlng1;
+    arrowTo = latlng2;
+  } else if (elev2 > elev1) {
+    arrowFrom = latlng2;
+    arrowTo = latlng1;
+  }
+
+  if (!arrowFrom || !arrowTo) return null;
+
+  const arrowLine = pair.line;
 
   const getOffsetPercentageValue = (from, to, pixelGap) => {
     const p1 = map.latLngToContainerPoint(from);
     const p2 = map.latLngToContainerPoint(to);
     const pixelLength = p1.distanceTo(p2);
-    const percent = (pixelGap / pixelLength) * 100;
-    return Math.min(Math.max(percent, 1), 49); // return as number
+    return Math.min(Math.max((pixelGap / pixelLength) * 100, 1), 49);
   };
 
   const pixelGapStart = 24;
@@ -918,26 +907,18 @@ function createLineWithArrowDecorator(pair, arrowFrom, arrowTo) {
       ],
     });
 
-  if (pair.arrowDecorator) {
-    map.removeLayer(pair.arrowDecorator);
-    pair.arrowDecorator = null;
-  }
-
-  if (pair.zoomHandler) {
-    map.off("zoomend", pair.zoomHandler);
-    pair.zoomHandler = null;
-  }
-
+  if (pair.arrowDecorator) map.removeLayer(pair.arrowDecorator);
   pair.arrowDecorator = buildDecorator().addTo(map);
 
+  // Rebind zoom handler to recalculate everything
+  if (pair.zoomHandler) {
+    map.off("zoomend", pair.zoomHandler);
+  }
+
   pair.zoomHandler = () => {
-    if (pair.arrowDecorator) map.removeLayer(pair.arrowDecorator);
-    pair.arrowDecorator = createLineWithArrowDecorator(
-      pair,
-      arrowFrom,
-      arrowTo
-    );
+    createLineWithArrowDecorator(pair);
   };
+
   map.on("zoomend", pair.zoomHandler);
 
   return pair.arrowDecorator;
