@@ -861,7 +861,6 @@ function createLineWithArrowDecorator(pair) {
     return Math.min(Math.max((pixelGap / pixelLength) * 100, 1), 49);
   };
 
-  // const pixelGapStart = 24;
   const pixelGapStart = 28;
   const pixelGapEnd = 18;
 
