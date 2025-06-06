@@ -40,7 +40,7 @@ Konfiguration:
 
 Versionen:
 - v1.0.0 - 2025-05-25: initiale Veröffentlichung
-- v1.0.1 - 2025-06-05: Richtungspfeil, Aktionen: Voreinstellung und Speicherung
+- v1.1.0 - 2025-06-06: Linie: Richtungspfeil, Aktion: Voreinstellung und Speicherung
 
 Autor:
 - Franz Kolberg
@@ -100,16 +100,10 @@ const all_toggle_buttons = [];
 
 /*
 mode – Interaktionsmodus
-
 Diese Variable steuert, was beim Klicken auf die Karte passiert:
-
     mode === 0: Kein aktiver Modus – Klicks werden ignoriert.
-
     mode === 1: Ein-Punkt-Modus – Marker wird gesetzt.
-
-    mode === 2: Zwei-Punkt-Modus – Erst ein Marker, dann ein zweiter, 
-                                    dazwischen wird eine Linie gezeichnet.
-
+    mode === 2: Zwei-Punkt-Modus – Erst ein Marker, dann ein zweiter, dazwischen wird eine Linie gezeichnet.
     mode === 9: Löschmodus 
 */
 
@@ -794,8 +788,6 @@ function addLineAndTooltip(pair) {
     let latlng1 = null;
     let latlng2 = null;
 
-    //pair.m1.elevation = pair.m2.elevation;
-
     if (pair.m1.elevation > pair.m2.elevation) {
       latlng1 = pair.marker1.getLatLng();
       latlng2 = pair.marker2.getLatLng();
@@ -814,9 +806,8 @@ function addLineAndTooltip(pair) {
 
   /*    
     L.polyline([latlng1, latlng2], ...)
-    Then latlng1 → latlng2 defines the direction of the line.
-    So any arrowHead placed along that line will point from latlng1 to latlng2, 
-    regardless of elevation!
+    Then latlng1 → latlng2 defines the direction of the line. So any arrowHead placed 
+    along that line will point from latlng1 to latlng2, regardless of elevation!
   */
   const newLine = L.polyline([latlng1, latlng2], {
     color: "red",
@@ -870,7 +861,8 @@ function createLineWithArrowDecorator(pair) {
     return Math.min(Math.max((pixelGap / pixelLength) * 100, 1), 49);
   };
 
-  const pixelGapStart = 24;
+  // const pixelGapStart = 24;
+  const pixelGapStart = 28;
   const pixelGapEnd = 18;
 
   const percentStart = getOffsetPercentageValue(
@@ -892,7 +884,12 @@ function createLineWithArrowDecorator(pair) {
           symbol: L.Symbol.arrowHead({
             pixelSize: 10,
             polygon: false,
-            pathOptions: { stroke: true, color: "rgb(82, 144, 199)" },
+            pathOptions: {
+              stroke: true,
+              color: "rgb(82, 144, 199)",
+              weight: 1.5,
+              opacity: 1
+            },
           }),
         },
         {
@@ -901,7 +898,12 @@ function createLineWithArrowDecorator(pair) {
           symbol: L.Symbol.arrowHead({
             pixelSize: 10,
             polygon: false,
-            pathOptions: { stroke: true, color: "rgb(82, 144, 199)" },
+            pathOptions: {
+              stroke: true,
+              color: "rgb(82, 144, 199)",
+              weight: 1.5,
+              opacity: 1
+            },
           }),
         },
       ],
