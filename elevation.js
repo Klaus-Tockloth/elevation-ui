@@ -568,8 +568,10 @@ function addTooltipAndPopupToMarker(marker, m) {
 
     let tooltip;
 
+    //console.log("m.isError: ", m.isError);
+    //console.log("m.isError: ", m);
     // 1 ) handle the special string first
-    if (m.isError === "true") {
+    if (m.isError === true) {
         tooltip = "Elevation error";
 
         /* 2 ) then the numeric tests
@@ -578,7 +580,7 @@ function addTooltipAndPopupToMarker(marker, m) {
     } else if (Number(m.elevation) >= 9999) {
         console.log("Elevation is 9999 or more");
         tooltip = "NoData";
-
+    
         /* 3 ) default case – just echo the value plus unit */
     } else {
         tooltip = `${formatNumber(m.elevation)} m`;
@@ -1023,33 +1025,25 @@ function createLineTooltip(pair) {
     const latlng2 = pair.marker2.getLatLng();
 
     const dist = latlng1.distanceTo(latlng2);
-    const diff = formatNumber(
+
+    let tipText;
+    if (pair.m1.isError || pair.m2.isError) {
+        tipText = "NoData";
+    } else {
+        const diff = formatNumber(
             parseFloat(pair.m2.elevation) - parseFloat(pair.m1.elevation)
             );
-
-    const grad =
-        Math.sign(diff) *
-        Math.max(1, Math.round(Math.abs((diff / dist) * 100)));
-    const arrow =
-        grad > 0 ? "↑" : // U+2191
-        grad < 0 ? "↓" : // U+2193
-        "→"; // U+2192
-
-    // Winkel in Grad
-    const angleRad = Math.atan(diff / dist);
-    const angleDeg = angleRad * (180 / Math.PI);
-
-    const displayDiffValue = Math.abs(parseFloat(diff)).toFixed(2);
-    const tip = `${displayDiffValue} m`;
-
-    const midLat = (latlng1.lat + latlng2.lat) / 2;
-    const midLng = (latlng1.lng + latlng2.lng) / 2;
+        const displayDiffValue = Math.abs(parseFloat(diff)).toFixed(2);
+        tipText = `${displayDiffValue} m`;
+    }
+    const tip = tipText;   
 
     const tooltipId = `tooltip-${Date.now()}`;
 
-    const htmlContent = `
-    <span id="${tooltipId}-text">${tip}</span>
-  `;
+    const htmlContent = `<span id="${tooltipId}-text">${tip}</span>`;
+
+    const midLat = (latlng1.lat + latlng2.lat) / 2;
+    const midLng = (latlng1.lng + latlng2.lng) / 2;  
 
     const tooltip = L.tooltip({
             permanent: true,
