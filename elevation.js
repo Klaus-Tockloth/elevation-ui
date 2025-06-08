@@ -832,14 +832,16 @@ Damit die Richtungspfeile stets in etwa den gleichen Abstand zu den Enpunkten ha
 muss zoom level berücksichtigt werden
 */ 
 function createLineWithArrowDecorator(pair) {
+  if (pair.m1.isError || pair.m2.isError) 
+    return;
+
   const latlng1 = pair.marker1.getLatLng();
   const latlng2 = pair.marker2.getLatLng();
 
   const elev1 = pair.m1.elevation;
   const elev2 = pair.m2.elevation;
 
-  if (elev1 === elev2)
-    return;
+  if (elev1 === elev2) return;
 
   let arrowFrom = null;
   let arrowTo = null;
@@ -889,7 +891,7 @@ function createLineWithArrowDecorator(pair) {
               stroke: true,
               color: "rgb(82, 144, 199)",
               weight: 1.5,
-              opacity: 1
+              opacity: 1,
             },
           }),
         },
@@ -903,7 +905,7 @@ function createLineWithArrowDecorator(pair) {
               stroke: true,
               color: "rgb(82, 144, 199)",
               weight: 1.5,
-              opacity: 1
+              opacity: 1,
             },
           }),
         },
