@@ -400,7 +400,7 @@ function generateLineInfoContent(pair) {
     const point1Info = getPointInfo(pair.m1);
     const point2Info = getPointInfo(pair.m2);
 
-    const withGrad = false;
+    const withGrad = true;
     let lineInfo = ""
     if (withGrad) {
         lineInfo = (!pair.m1.isError && !pair.m2.isError) ?
