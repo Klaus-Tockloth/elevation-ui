@@ -365,11 +365,7 @@ function generateLineInfoContent(pair) {
     const grad =
         Math.sign(diff) *
         Math.max(1, Math.round(Math.abs((diff / dist) * 100)));
-    const arrow =
-        grad > 0 ? "↑" :
-        grad < 0 ? "↓" :
-        "→";
-
+    
     const angleRad = Math.atan(diff / dist);
     const angleDeg = angleRad * (180 / Math.PI);
 
@@ -400,15 +396,12 @@ function generateLineInfoContent(pair) {
     const point1Info = getPointInfo(pair.m1);
     const point2Info = getPointInfo(pair.m2);
 
-    const withGrad = true;
-    let lineInfo = ""
-    if (withGrad) {
-        lineInfo = (!pair.m1.isError && !pair.m2.isError) ?
+    const lineInfo = (!pair.m1.isError && !pair.m2.isError) ?
             `
             Delta: ${Math.abs(formatNumber(diff))} m<br>
             Winkel: ${Math.abs(formatNumber(angleDeg))}°<br>
             Strecke: ${formatNumber(dist)} m<br>
-            Prozent: ${grad}% ${arrow}
+            Prozent: ${Math.abs(formatNumber(grad))}%
         ` :
             `
             Delta: -<br>
@@ -416,20 +409,6 @@ function generateLineInfoContent(pair) {
             Strecke: ${formatNumber(dist)} m<br>
             Prozent: -
         `;
-        } else {
-            lineInfo = (!pair.m1.isError && !pair.m2.isError) ?
-                `
-                Delta: ${Math.abs(formatNumber(diff))} m<br>
-                Winkel: ${Math.abs(formatNumber(angleDeg))}°<br>
-                Strecke: ${formatNumber(dist)} m<br>
-            ` :
-                `
-                Delta: -<br>
-                Winkel: -<br>
-                Strecke: ${formatNumber(dist)} m<br>
-            `;
-        }
-
 
     const detailed = false;
     if (detailed) {
