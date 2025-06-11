@@ -41,6 +41,7 @@ Konfiguration:
 Versionen:
 - v1.0.0 - 2025-05-25: initiale Veröffentlichung
 - v1.1.0 - 2025-06-06: Linie: Richtungspfeil, Aktion: Voreinstellung und Speicherung
+           2025-06-11: alert bei Fetch error und Delta, Prozent, Winkel, ..., Prozent und Winkel mit 1 NK
 
 Autor:
 - Franz Kolberg
@@ -362,12 +363,11 @@ function generateLineInfoContent(pair) {
 
     const diff = formatNumber(pair.m2.elevation - pair.m1.elevation);
 
-    const grad =
-        Math.sign(diff) *
-        Math.max(1, Math.round(Math.abs((diff / dist) * 100)));
+    const gradientPercent = formatNumber((Math.abs(diff) / dist) * 100, 1);
     
-    const angleRad = Math.atan(diff / dist);
+    const angleRad = Math.atan(Math.abs(diff) / dist);
     const angleDeg = angleRad * (180 / Math.PI);
+    const formattedAngle = formatNumber(angleDeg, 1);
 
     const getPointInfo = (m) => {
         if (!m.isError) {
@@ -399,15 +399,15 @@ function generateLineInfoContent(pair) {
     const lineInfo = (!pair.m1.isError && !pair.m2.isError) ?
             `
             Delta: ${Math.abs(formatNumber(diff))} m<br>
-            Winkel: ${Math.abs(formatNumber(angleDeg))}°<br>
-            Strecke: ${formatNumber(dist)} m<br>
-            Prozent: ${Math.abs(formatNumber(grad))}%
+            Prozent: ${gradientPercent} %<br>
+            Winkel: ${formatNumber(angleDeg, 1)}°<br>
+            Strecke: ${formatNumber(dist)} m<br>            
         ` :
             `
             Delta: -<br>
+            Prozent: -<br>
             Winkel: -<br>
-            Strecke: ${formatNumber(dist)} m<br>
-            Prozent: -
+            Strecke: ${formatNumber(dist)} m<br>            
         `;
 
     const detailed = false;
@@ -971,6 +971,7 @@ function fetchElevation(latlng, onSuccess) {
         .catch((error) => {
             isFetchingElevation = false;
             console.error("Fetch error:", error);
+            alert("Fetch error: " + error.message);
 
             const msg = "❌ Fetch failed";
             const a = "Code: FETCH_ERROR";
@@ -1280,8 +1281,9 @@ function showOverlayWithContent(content) {
 /*
 auf 2 Nachkommestellen runden
 */
-function formatNumber(number) {
-  return (Math.round(number * 100) / 100).toFixed(2);
+function formatNumber(number, nk=2) {
+  //return (Math.round(number * 100) / 100).toFixed(nk);
+  return (Math.round(number * Math.pow(10, nk)) / Math.pow(10, nk)).toFixed(nk);
 }
 
 /*
